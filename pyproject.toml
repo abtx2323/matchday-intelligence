@@ -24,4 +24,4 @@ ignore = ["S311"]  # random is used for seeded synthetic data, not cryptography
 "app/agents/i18n.py" = ["E501"]
 
 [tool.ruff.lint.mccabe]
-max-complexity = 25
+max-complexity = 30

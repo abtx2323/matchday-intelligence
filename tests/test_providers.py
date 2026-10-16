@@ -104,7 +104,12 @@ def test_factory_defaults_offline_and_validates_cloud_config():
     assert build_primary(Settings()) is None
     svc = build_voice_service(Settings(), fault_rate=0.3, seed=1)
     assert svc.primary is not None and svc.primary.name == "simulated-model"
-    # Cloud provider without endpoint: fails at call time, and the service falls back.
-    primary = build_primary(Settings(provider="foundry"))
-    res = asyncio.run(VoiceService(primary, retries=0).voice(req()))
-    assert res.fallback_used and res.text == "fallback line"
+    # Incomplete / invalid cloud config or unknown provider fails fast at build time.
+    for bad in (
+        Settings(provider="foundry"),
+        Settings(provider="azure_openai"),
+        Settings(provider="foundry", foundry_project_endpoint="http://x", foundry_model="m"),
+        Settings(provider="nonsense"),
+    ):
+        with pytest.raises(ProviderError):
+            build_primary(bad)

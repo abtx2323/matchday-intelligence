@@ -107,6 +107,7 @@ resource web 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'FOUNDRY_MODEL', value: foundryModel }
             { name: 'AZURE_CLIENT_ID', value: identity.properties.clientId }
             { name: 'ALLOWED_ORIGINS', value: allowedOrigins }
+            { name: 'MDI_TRUSTED_PROXY_HOPS', value: '1' } // ACA ingress appends the client IP
           ]
           probes: [
             { type: 'Liveness', httpGet: { path: '/healthz', port: 8000 }, periodSeconds: 30 }

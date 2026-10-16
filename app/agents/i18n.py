@@ -271,10 +271,15 @@ WHY: dict[str, dict[str, str]] = {
         "es": "Amplía la ventaja de {team}.",
         "fr": "{team} creuse l'écart.",
     },
-    "consolation": {
+    "pulls_back": {
         "en": "It narrows the gap for {team}.",
         "es": "{team} recorta distancias.",
         "fr": "{team} réduit l'écart.",
+    },
+    "consolation": {
+        "en": "A late consolation for {team}.",
+        "es": "Un gol del honor tardío para {team}.",
+        "fr": "Une réduction du score tardive pour {team}.",
     },
     "against_run": {
         "en": "It came against the run of play: momentum was {momentum} against them.",

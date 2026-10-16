@@ -121,14 +121,21 @@ Docker: `docker build -t matchday . && docker run -p 8000:8000 matchday`
 | `GET /api/match/{seed}/recap` | Personalized full-time recap |
 | `GET /api/schema`, `/api/docs`, `/healthz` | Schema, OpenAPI docs, health |
 
-All parameters are validated (enums, ranges, id patterns). CORS is off unless `ALLOWED_ORIGINS`
+Batch endpoints (`timeline`, `compare`, `recap`) use the deterministic template voice, run in a
+worker thread and are cached per seed and profile; the live stream is where model voices are used.
+Model use is bounded app-wide: a single shared provider, cache and circuit breaker, plus lifetime
+and hourly call budgets that fall back to templates. Requests are rate limited per client, live
+streams are capped globally and per client and have a maximum duration, and `speed` must be 0
+(as fast as possible) or 5-600.
+
+All parameters are validated (enums, ranges, id patterns, finite numbers). CORS is off unless `ALLOWED_ORIGINS`
 is set, responses carry a strict CSP and security headers, concurrent streams are capped,
 dependencies are pinned, and the container runs as a non-root user. The code never uses `eval`.
 
 ## Tests
 
 ```bash
-pytest          # 70 tests, all offline, no Azure credentials needed
+pytest          # all offline, no Azure credentials needed (pytest --cov=app for coverage)
 ruff check .    # lint
 ```
 

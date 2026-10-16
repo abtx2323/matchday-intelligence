@@ -55,7 +55,7 @@ def test_agent_framework_provider_runs_real_agent_with_fake_client():
     assert text == "¡Golazo de prueba!"
     assert client.calls == 1
     assert isinstance(provider._agents["commentary"], Agent)
-    assert provider.name == "foundry:test-model"
+    assert provider.name == "foundry"  # model name is never exposed
 
 
 def test_agent_framework_provider_inside_voice_service_falls_back_on_garbage():
