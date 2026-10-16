@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Matchday Intelligence</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◎</span>
+      <div>
+        <h1>Matchday Intelligence</h1>
+        <p class="sub">Five AI agents turn synthetic match events into explainable, personalized overlays</p>
+      </div>
+    </div>
+    <form id="controls" class="controls" autocomplete="off">
+      <label>Match seed <input id="seed" type="number" min="0" max="1000000" value="6"></label>
+      <div class="seg" role="radiogroup" aria-label="Viewing mode">
+        <button type="button" class="seg-btn active" data-mode="casual">Casual fan</button>
+        <button type="button" class="seg-btn" data-mode="analyst">Analyst</button>
+      </div>
+      <label>Language
+        <select id="lang">
+          <option value="en">English</option>
+          <option value="es">Español</option>
+          <option value="fr">Français</option>
+        </select>
+      </label>
+      <label>Favorite club <select id="club"><option value="">None</option></select></label>
+      <label>Player focus <select id="player"><option value="">None</option></select></label>
+      <label>Speed
+        <select id="speed">
+          <option value="15">15×</option>
+          <option value="30" selected>30× (3 min match)</option>
+          <option value="60">60×</option>
+          <option value="180">180×</option>
+        </select>
+      </label>
+      <label class="check"><input id="faults" type="checkbox"> Simulate AI outage</label>
+      <button id="play" type="button" class="primary">▶ Kick off</button>
+      <button id="compareBtn" type="button">Compare modes</button>
+    </form>
+  </header>
+
+  <main class="layout">
+    <section class="stage" aria-label="Broadcast view">
+      <div id="broadcast" class="broadcast">
+        <svg id="pitch" viewBox="-3 -3 111 74" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <rect x="-3" y="-3" width="111" height="74" class="grass"/>
+          <g class="lines">
+            <rect x="0" y="0" width="105" height="68"/>
+            <line x1="52.5" y1="0" x2="52.5" y2="68"/>
+            <circle cx="52.5" cy="34" r="9.15"/>
+            <rect x="0" y="13.84" width="16.5" height="40.32"/>
+            <rect x="88.5" y="13.84" width="16.5" height="40.32"/>
+            <rect x="0" y="24.84" width="5.5" height="18.32"/>
+            <rect x="99.5" y="24.84" width="5.5" height="18.32"/>
+            <rect x="-2" y="30.34" width="2" height="7.32"/>
+            <rect x="105" y="30.34" width="2" height="7.32"/>
+          </g>
+          <g id="markers"></g>
+          <line id="passLine" x1="0" y1="0" x2="0" y2="0" class="pass-line"/>
+          <circle id="ball" cx="52.5" cy="34" r="1.1" class="ball"/>
+        </svg>
+        <div id="tags" class="tags"></div>
+        <div id="scorebug" class="scorebug hidden"></div>
+        <div id="momentum" class="momentum hidden"></div>
+        <div id="lowerThird" class="lower-third hidden"></div>
+        <div id="fanAlert" class="fan-alert hidden"></div>
+        <div id="clock" class="clock">00:00</div>
+        <div id="providerBadge" class="provider-badge">provider: template</div>
+      </div>
+      <div id="recap" class="recap hidden" aria-live="polite"></div>
+      <div id="compare" class="compare hidden"></div>
+    </section>
+
+    <aside class="side">
+      <nav class="tabs" role="tablist">
+        <button class="tab active" data-tab="feed">Live feed</button>
+        <button class="tab" data-tab="stats">Stats</button>
+        <button class="tab" data-tab="agents">Agents</button>
+        <button class="tab" data-tab="json">Overlay JSON</button>
+      </nav>
+      <div class="panel active" id="tab-feed">
+        <div id="playerCard" class="player-card hidden"></div>
+        <ol id="ticker" class="ticker" aria-live="polite"></ol>
+      </div>
+      <div class="panel" id="tab-stats"><div id="statPanel" class="stat-panel">Stats appear as the match runs.</div></div>
+      <div class="panel" id="tab-agents">
+        <div class="pipeline">
+          <span class="node">Simulator</span><span class="arrow">→</span>
+          <span class="node">Stats</span><span class="arrow">→</span>
+          <span class="node">Explainer</span><span class="arrow">→</span>
+          <span class="node">Storyteller</span><span class="arrow">→</span>
+          <span class="node">Personalizer</span>
+        </div>
+        <div id="agentSummary" class="agent-summary">Waiting for kick-off…</div>
+        <ol id="trace" class="trace"></ol>
+      </div>
+      <div class="panel" id="tab-json"><pre id="json" class="json">Machine-readable overlay events appear here (schema: /api/schema).</pre></div>
+    </aside>
+  </main>
+  <footer class="foot">All clubs, players and events are fictional and synthetic. · <a href="/api/docs">API docs</a> · <a href="/api/schema">Overlay schema</a></footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>

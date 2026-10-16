@@ -1,0 +1,112 @@
+"""Fictional clubs and players. Every name here is invented for synthetic data only."""
+
+from __future__ import annotations
+
+# (position, base_x, base_y) for a 4-3-3 in the attacking frame (team attacks towards x=105).
+FORMATION_433: tuple[tuple[str, float, float], ...] = (
+    ("GK", 5.0, 34.0),
+    ("LB", 28.0, 10.0),
+    ("CB", 20.0, 26.0),
+    ("CB", 20.0, 42.0),
+    ("RB", 28.0, 58.0),
+    ("CM", 44.0, 22.0),
+    ("DM", 38.0, 34.0),
+    ("CM", 44.0, 46.0),
+    ("LW", 70.0, 12.0),
+    ("ST", 78.0, 34.0),
+    ("RW", 70.0, 56.0),
+)
+
+CLUBS: tuple[dict, ...] = (
+    {
+        "id": "HBR",
+        "name": "Harbourside FC",
+        "short": "Harbourside",
+        "color": "#1f6feb",
+        "style": "possession",
+        "strength": 0.62,
+        "players": [
+            ("Tomas Vellacott", 1),
+            ("Ide Okonkwo-Rhys", 3),
+            ("Bram Halvorsen", 5),
+            ("Kofi Ashdown", 4),
+            ("Luca Penhallow", 2),
+            ("Mateo Quillfeather", 8),
+            ("Sami Draycott", 6),
+            ("Ronan Tiberi", 10),
+            ("Yusuf Calderwood", 11),
+            ("Elio Marchbank", 9),
+            ("Dani Sorrowby", 7),
+        ],
+    },
+    {
+        "id": "KSV",
+        "name": "Kestrel Vale",
+        "short": "Kestrel",
+        "color": "#d1495b",
+        "style": "pressing",
+        "strength": 0.58,
+        "players": [
+            ("Aksel Thornquist", 1),
+            ("Joao Wrenfield", 3),
+            ("Pim Oyelaran", 5),
+            ("Callum Brisebois", 6),
+            ("Nnamdi Fairhurst", 2),
+            ("Teo Lindqvast", 8),
+            ("Rafa Ellingsworth", 4),
+            ("Kenji Abernathe", 10),
+            ("Mika Strandholt", 11),
+            ("Owen Castellane", 9),
+            ("Zaid Kettleborough", 7),
+        ],
+    },
+    {
+        "id": "IBR",
+        "name": "Ironbridge Rovers",
+        "short": "Ironbridge",
+        "color": "#e09f3e",
+        "style": "direct",
+        "strength": 0.55,
+        "players": [
+            ("Gideon Marlowe-Ike", 1),
+            ("Fen Achterberg", 3),
+            ("Oscar Duvalle", 5),
+            ("Bastian Nwosu-Hale", 4),
+            ("Ilya Brackwater", 2),
+            ("Leon Saverine", 8),
+            ("Hamza Tollemache", 6),
+            ("Nico Ravensworth", 10),
+            ("Arlo Mbatha-Lund", 11),
+            ("Viktor Ashgrove", 9),
+            ("Cass Pembury", 7),
+        ],
+    },
+    {
+        "id": "SMA",
+        "name": "Saltmere Athletic",
+        "short": "Saltmere",
+        "color": "#2a9d8f",
+        "style": "possession",
+        "strength": 0.6,
+        "players": [
+            ("Ruben Esterhazy-Cole", 1),
+            ("Marek Dunsford", 3),
+            ("Tobi Wexcombe", 5),
+            ("Ansel Fjordmann", 4),
+            ("Jules Okafor-Bray", 2),
+            ("Emil Castavane", 8),
+            ("Darian Holloway-Sze", 6),
+            ("Felix Amberleigh", 10),
+            ("Ravi Stonecastle", 11),
+            ("Hugo Brennaman", 9),
+            ("Selim Varrow", 7),
+        ],
+    },
+)
+
+VENUES: tuple[str, ...] = (
+    "Lantern Park",
+    "The Quarry Ground",
+    "Northgate Arena",
+    "Saltmere Dome",
+)
