@@ -278,7 +278,7 @@ class StorytellerAgent:
                 fallback_text=fallback,
                 significance=sig,
                 max_words=45 if mode == "analyst" else 22,
-                cache_key=f"{item.id}|{lang}|{mode}",
+                cache_key=f"{self.meta.match_id}|{item.id}|{lang}|{mode}",
             )
             res = await self.voice_service.voice(req)
             return Voiced(headline, res.text, res)
@@ -292,7 +292,7 @@ class StorytellerAgent:
             fallback_text=fallback,
             significance=sig,
             max_words=30 if mode == "analyst" else 16,
-            cache_key=f"{item.id}|{lang}|{mode}",
+            cache_key=f"{self.meta.match_id}|{item.id}|{lang}|{mode}",
         )
         res = await self.voice_service.voice(req)
         return Voiced(None, res.text, res)

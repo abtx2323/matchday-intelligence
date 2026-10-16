@@ -19,6 +19,7 @@ SWING_COOLDOWN_MIN = 10
 RHYTHM_COOLDOWN_MIN = 8
 PRESS_COOLDOWN_MIN = 10
 BIG_CHANCE_XG = 0.28
+CONSOLATION_MINUTE = 75
 
 
 @dataclass
@@ -111,8 +112,10 @@ class ExplainerAgent:
                 state = "equaliser"
             elif diff_before >= 1:
                 state = "extends_lead"
+            elif ev.period == 2 and ev.match_clock_s >= CONSOLATION_MINUTE * 60:
+                state = "consolation"  # only a consolation when there's little time left
             else:
-                state = "consolation"
+                state = "pulls_back"
             reasons: list[tuple[str, dict[str, Any]]] = [(state, {})]
             if momentum_before <= -20:
                 reasons.append(("against_run", {"momentum": abs(momentum_before)}))

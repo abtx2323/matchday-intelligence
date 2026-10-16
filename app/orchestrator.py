@@ -15,6 +15,7 @@ streamed to renderers as ``agent_trace`` overlays.
 from __future__ import annotations
 
 import inspect
+import logging
 import random
 import time
 from collections import deque
@@ -30,8 +31,11 @@ from .agents.storyteller import NarrativeItem, StorytellerAgent
 from .config import Settings
 from .models import EventType, MatchEvent
 from .providers import LanguageProvider, build_voice_service
+from .providers.resilient import SharedVoiceState
 from .schema import Display, MatchClock, OverlayEvent, OverlayType, Slot
 from .simulator import MatchSimulator
+
+log = logging.getLogger(__name__)
 
 AGENTS = ("simulator", "stats", "explainer", "storyteller", "personalizer")
 
@@ -117,6 +121,8 @@ class MatchSession:
         settings: Settings | None = None,
         *,
         primary: LanguageProvider | None = None,
+        shared: SharedVoiceState | None = None,
+        client_key: str = "anonymous",
         fault_rate: float = 0.0,
         agent_fault_rate: float = 0.0,
         max_attempts: int = 2,
@@ -129,7 +135,13 @@ class MatchSession:
         self.meta = self.simulator.meta
         self._current: tuple[float, int] = (0.0, 0)
         self.voice = build_voice_service(
-            self.settings, seed=seed, fault_rate=fault_rate, primary=primary, on_event=self._on_voice_event
+            self.settings,
+            seed=seed,
+            fault_rate=fault_rate,
+            primary=primary,
+            shared=shared,
+            client_key=client_key,
+            on_event=self._on_voice_event,
         )
         self.stats = StatsAgent(self.meta)
         self.explainer = ExplainerAgent(self.meta, self.stats)
@@ -186,7 +198,8 @@ class MatchSession:
                 self.trace.handoffs += 1
                 return result
             except Exception as exc:  # noqa: BLE001 - agents must never crash the match
-                last_err = f"{type(exc).__name__}: {str(exc)[:160]}"
+                last_err = "agent_error"  # generic label; details stay in server logs
+                log.warning("agent %s failed at seq %s: %r", agent, seq, exc)
         elapsed = (time.perf_counter() - start) * 1000
         c.total_ms += elapsed
         c.degraded += 1

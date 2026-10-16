@@ -37,3 +37,11 @@ def test_overlays_are_timed_and_ids_unique(full_run):
 def test_committed_schema_doc_is_current():
     assert DOC.exists(), "run: python scripts/export_schema.py"
     assert json.loads(DOC.read_text()) == overlay_json_schema()
+
+
+def test_export_script_regenerates_identical_schema(capsys):
+    import runpy
+
+    before = DOC.read_text()
+    runpy.run_path(str(DOC.parents[1] / "scripts" / "export_schema.py"), run_name="__main__")
+    assert DOC.read_text() == before and "wrote" in capsys.readouterr().out

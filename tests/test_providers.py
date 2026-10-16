@@ -94,8 +94,9 @@ def test_sanitize_model_text():
     assert sanitize_model_text('  "**Big** goal!"  ', 10) == "Big goal!"
     with pytest.raises(ProviderError):
         sanitize_model_text("", 10)
-    with pytest.raises(ProviderError):
-        sanitize_model_text("see https://example.com", 10)
+    for bad in ("see https://example.com", "visit www.example.com", "ftp://x"):
+        with pytest.raises(ProviderError):
+            sanitize_model_text(bad, 10)
     long = sanitize_model_text("word " * 200, 10)
     assert len(long.split()) <= 21
 
@@ -104,7 +105,12 @@ def test_factory_defaults_offline_and_validates_cloud_config():
     assert build_primary(Settings()) is None
     svc = build_voice_service(Settings(), fault_rate=0.3, seed=1)
     assert svc.primary is not None and svc.primary.name == "simulated-model"
-    # Cloud provider without endpoint: fails at call time, and the service falls back.
-    primary = build_primary(Settings(provider="foundry"))
-    res = asyncio.run(VoiceService(primary, retries=0).voice(req()))
-    assert res.fallback_used and res.text == "fallback line"
+    # Incomplete / invalid cloud config or unknown provider fails fast at build time.
+    for bad in (
+        Settings(provider="foundry"),
+        Settings(provider="azure_openai"),
+        Settings(provider="foundry", foundry_project_endpoint="http://x", foundry_model="m"),
+        Settings(provider="nonsense"),
+    ):
+        with pytest.raises(ProviderError):
+            build_primary(bad)

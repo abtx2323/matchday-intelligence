@@ -45,56 +45,88 @@ STYLE = {
 }
 
 
-def _build_client(kind: str, settings: Any) -> Any:
+def validate_settings(kind: str, settings: Any) -> None:
+    """Check cloud configuration *before* any credential or client is created."""
+    if kind == "foundry":
+        if not settings.foundry_project_endpoint or not settings.foundry_model:
+            raise ProviderError("FOUNDRY_PROJECT_ENDPOINT and FOUNDRY_MODEL must be set")
+        if not str(settings.foundry_project_endpoint).startswith("https://"):
+            raise ProviderError("FOUNDRY_PROJECT_ENDPOINT must be an https URL")
+    elif kind == "azure_openai":
+        if not settings.azure_openai_endpoint or not settings.azure_openai_deployment:
+            raise ProviderError("AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT must be set")
+        if not str(settings.azure_openai_endpoint).startswith("https://"):
+            raise ProviderError("AZURE_OPENAI_ENDPOINT must be an https URL")
+    else:
+        raise ProviderError(f"unknown provider kind {kind!r}")
+
+
+def _build_client(kind: str, settings: Any) -> tuple[Any, Any]:
+    """Returns (client, credential). Configuration is validated first."""
+    validate_settings(kind, settings)
     try:
         from azure.identity.aio import DefaultAzureCredential
     except ImportError as exc:  # pragma: no cover - depends on optional install
         raise ProviderError(
             "azure-identity is not installed (pip install -r requirements-azure.txt)"
         ) from exc
-
-    credential = DefaultAzureCredential()
     if kind == "foundry":
         try:
             from agent_framework.foundry import FoundryChatClient
         except ImportError as exc:  # pragma: no cover
             raise ProviderError("agent-framework-foundry is not installed") from exc
-        if not settings.foundry_project_endpoint or not settings.foundry_model:
-            raise ProviderError("FOUNDRY_PROJECT_ENDPOINT and FOUNDRY_MODEL must be set")
+        credential = DefaultAzureCredential()
         return FoundryChatClient(
             project_endpoint=settings.foundry_project_endpoint,
             model=settings.foundry_model,
             credential=credential,
-        )
-    if kind == "azure_openai":
-        try:
-            from agent_framework.openai import OpenAIChatCompletionClient
-        except ImportError as exc:  # pragma: no cover
-            raise ProviderError("agent-framework-openai is not installed") from exc
-        if not settings.azure_openai_endpoint or not settings.azure_openai_deployment:
-            raise ProviderError("AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_DEPLOYMENT must be set")
-        return OpenAIChatCompletionClient(
-            model=settings.azure_openai_deployment,
-            azure_endpoint=settings.azure_openai_endpoint,
-            api_version=settings.azure_openai_api_version,
-            credential=credential,
-        )
-    raise ProviderError(f"unknown provider kind {kind!r}")
+        ), credential
+    try:
+        from agent_framework.openai import OpenAIChatCompletionClient
+    except ImportError as exc:  # pragma: no cover
+        raise ProviderError("agent-framework-openai is not installed") from exc
+    credential = DefaultAzureCredential()
+    return OpenAIChatCompletionClient(
+        model=settings.azure_openai_deployment,
+        azure_endpoint=settings.azure_openai_endpoint,
+        api_version=settings.azure_openai_api_version,
+        credential=credential,
+    ), credential
 
 
 class AgentFrameworkProvider:
-    """Voices text with Microsoft Agent Framework ``Agent`` objects, one per agent role."""
+    """Voices text with Microsoft Agent Framework ``Agent`` objects, one per agent role.
+
+    Built once per app (in the FastAPI lifespan) and shared by every session.
+    """
 
     def __init__(
         self, kind: str, settings: Any, client: Any | None = None, agent_factory: Any | None = None
     ) -> None:
         self.kind = kind
-        model = settings.foundry_model if kind == "foundry" else settings.azure_openai_deployment
-        self.name = f"{kind}:{model or 'unset'}"
+        self.name = kind  # deliberately excludes the model/deployment name
         self._settings = settings
         self._client = client
+        self._credential: Any | None = None
         self._agent_factory = agent_factory
         self._agents: dict[str, Any] = {}
+
+    def validate(self) -> None:
+        if self._client is None and self._agent_factory is None:
+            validate_settings(self.kind, self._settings)
+
+    async def aclose(self) -> None:
+        for obj in (self._client, self._credential):
+            close = getattr(obj, "close", None)
+            if close is None:
+                continue
+            try:
+                result = close()
+                if hasattr(result, "__await__"):
+                    await result
+            except Exception:  # noqa: BLE001 - best-effort shutdown
+                log.warning("error while closing %s", type(obj).__name__)
+        self._credential = None
 
     def _agent(self, task: str) -> Any:
         if task in self._agents:
@@ -105,7 +137,7 @@ class AgentFrameworkProvider:
             from agent_framework import Agent
 
             if self._client is None:
-                self._client = _build_client(self.kind, self._settings)
+                self._client, self._credential = _build_client(self.kind, self._settings)
             agent = Agent(
                 self._client,
                 INSTRUCTIONS[task],
