@@ -122,6 +122,7 @@ class MatchSession:
         *,
         primary: LanguageProvider | None = None,
         shared: SharedVoiceState | None = None,
+        client_key: str = "anonymous",
         fault_rate: float = 0.0,
         agent_fault_rate: float = 0.0,
         max_attempts: int = 2,
@@ -139,6 +140,7 @@ class MatchSession:
             fault_rate=fault_rate,
             primary=primary,
             shared=shared,
+            client_key=client_key,
             on_event=self._on_voice_event,
         )
         self.stats = StatsAgent(self.meta)

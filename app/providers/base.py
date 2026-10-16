@@ -53,7 +53,8 @@ def sanitize_model_text(text: str, max_words: int) -> str:
     cleaned = _WS.sub(" ", cleaned).strip().strip('"').strip("“”").strip()
     if not cleaned:
         raise ProviderError("empty response after cleaning")
-    if "http://" in cleaned or "https://" in cleaned:
+    lowered = cleaned.lower()
+    if "://" in lowered or "www." in lowered:
         raise ProviderError("response contained a URL")
     words = cleaned.split(" ")
     hard_cap = int(max_words * 1.5) + 5

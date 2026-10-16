@@ -126,11 +126,17 @@ worker thread and are cached per seed and profile; the live stream is where mode
 Model use is bounded app-wide: a single shared provider, cache and circuit breaker, plus lifetime
 and hourly call budgets that fall back to templates. Requests are rate limited per client, live
 streams are capped globally and per client and have a maximum duration, and `speed` must be 0
-(as fast as possible) or 5-600.
+(as fast as possible) or 5-600. Each client also gets an hourly share of model calls, and "Simulate AI
+outage" sessions never use the real model or shared budget.
+
+> **Cost backstop:** these limits are in-memory and per replica (up to 5 replicas in the
+> Bicep), and the lifetime cap resets on restart. Set an **Azure budget alert** on the resource
+> group and a **tokens-per-minute quota** on the Foundry / Azure OpenAI deployment as the hard
+> spending limit.
 
 All parameters are validated (enums, ranges, id patterns, finite numbers). CORS is off unless `ALLOWED_ORIGINS`
 is set, responses carry a strict CSP and security headers, concurrent streams are capped,
-dependencies are pinned, and the container runs as a non-root user. The code never uses `eval`.
+top-level dependencies are pinned (no hash-locked lockfile yet), and the container runs as a non-root user. The code never uses `eval`.
 
 ## Tests
 

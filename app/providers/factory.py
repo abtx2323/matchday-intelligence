@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ..config import VALID_PROVIDERS, Settings
+from ..limits import RateLimiter
 from .base import LanguageProvider, ProviderError
 from .resilient import CircuitBreaker, FaultInjector, LRUCache, ModelBudget, SharedVoiceState, VoiceService
 from .template import TemplateProvider
@@ -34,6 +35,7 @@ def build_shared_state(settings: Settings) -> SharedVoiceState:
         breaker=CircuitBreaker(settings.breaker_threshold, settings.breaker_cooldown_s),
         budget=ModelBudget(settings.llm_max_calls_total, settings.llm_max_calls_per_hour),
         cache=LRUCache(4096),
+        per_client=RateLimiter(settings.llm_calls_per_client_per_hour, 3600.0),
     )
 
 
@@ -44,28 +46,28 @@ def build_voice_service(
     fault_rate: float = 0.0,
     primary: LanguageProvider | None = None,
     shared: SharedVoiceState | None = None,
+    client_key: str = "anonymous",
     on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> VoiceService:
-    """Per-session voice service. ``primary`` and ``shared`` are app-wide singletons."""
-    if primary is None and fault_rate > 0:
-        # Offline demo of failure recovery: a simulated "model" that the injector can break.
+    """Per-session voice service. ``primary`` and ``shared`` are app-wide singletons.
+
+    A fault-injection (demo) session never touches the real model or any shared state: it gets
+    a simulated model plus its own private budget, cache and breaker.
+    """
+    if fault_rate > 0:
         primary = TemplateProvider(name="simulated-model")
-        shared = None  # never let simulated faults touch the app-wide breaker/cache
+        shared = build_shared_state(settings)
     shared = shared or build_shared_state(settings)
-    # Injected faults must not trip the app-wide breaker for other viewers.
-    breaker = (
-        CircuitBreaker(settings.breaker_threshold, settings.breaker_cooldown_s)
-        if fault_rate > 0
-        else shared.breaker
-    )
     return VoiceService(
         primary,
         timeout_s=settings.llm_timeout_s,
         retries=settings.llm_retries,
         min_significance=settings.llm_min_significance,
-        breaker=breaker,
+        breaker=shared.breaker,
         budget=shared.budget,
         cache=shared.cache,
         faults=FaultInjector(fault_rate, seed) if fault_rate > 0 else None,
+        client_limiter=shared.per_client,
+        client_key=client_key,
         on_event=on_event,
     )

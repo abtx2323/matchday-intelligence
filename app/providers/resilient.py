@@ -16,6 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..limits import RateLimiter
 from .base import LanguageProvider, ProviderError, VoiceRequest, VoiceResult
 from .template import TemplateProvider
 
@@ -102,6 +103,7 @@ class SharedVoiceState:
     breaker: CircuitBreaker
     budget: ModelBudget
     cache: LRUCache = field(default_factory=LRUCache)
+    per_client: RateLimiter | None = None  # each client's hourly share of model calls
 
 
 class FaultInjector:
@@ -135,6 +137,8 @@ class VoiceService:
         budget: ModelBudget | None = None,
         cache: LRUCache | None = None,
         faults: FaultInjector | None = None,
+        client_limiter: RateLimiter | None = None,
+        client_key: str = "anonymous",
         on_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.fallback = TemplateProvider()
@@ -146,6 +150,8 @@ class VoiceService:
         self.budget = budget
         self.cache = cache or LRUCache(2048)
         self.faults = faults
+        self.client_limiter = client_limiter
+        self.client_key = client_key
         self.on_event = on_event
         self.stats = {
             "calls": 0,
@@ -189,13 +195,16 @@ class VoiceService:
         errors: list[str] = []
         start = time.perf_counter()
         for attempt in range(1, self.retries + 2):
-            if self.budget is not None and not self.budget.try_acquire():
-                self.stats["budget_exhausted"] += 1
-                self._emit(status="budget_exhausted", provider=self.primary.name, key=req.key)
-                return self._fallback(req, "budget_exhausted", errors=errors)
             try:
+                # Injected (demo) faults are checked first so they never consume budget.
                 if self.faults:
                     self.faults.maybe_fail(f"{self.primary.name}:{req.task}")
+                if (self.client_limiter is not None and not self.client_limiter.allow(self.client_key)) or (
+                    self.budget is not None and not self.budget.try_acquire()
+                ):
+                    self.stats["budget_exhausted"] += 1
+                    self._emit(status="budget_exhausted", provider=self.primary.name, key=req.key)
+                    return self._fallback(req, "budget_exhausted", errors=errors)
                 text = await asyncio.wait_for(self.primary.voice(req), self.timeout_s)
                 self.breaker.record_success()
                 self.stats["primary_ok"] += 1

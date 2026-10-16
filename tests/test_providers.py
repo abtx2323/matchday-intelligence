@@ -94,8 +94,9 @@ def test_sanitize_model_text():
     assert sanitize_model_text('  "**Big** goal!"  ', 10) == "Big goal!"
     with pytest.raises(ProviderError):
         sanitize_model_text("", 10)
-    with pytest.raises(ProviderError):
-        sanitize_model_text("see https://example.com", 10)
+    for bad in ("see https://example.com", "visit www.example.com", "ftp://x"):
+        with pytest.raises(ProviderError):
+            sanitize_model_text(bad, 10)
     long = sanitize_model_text("word " * 200, 10)
     assert len(long.split()) <= 21
 

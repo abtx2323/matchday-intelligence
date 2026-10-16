@@ -17,7 +17,7 @@ from app.orchestrator import MatchSession
 from app.providers import ProviderError, VoiceRequest, VoiceService
 from app.providers.agent_framework_provider import AgentFrameworkProvider
 from app.providers.factory import build_primary, build_shared_state, build_voice_service
-from app.providers.resilient import ModelBudget, error_label
+from app.providers.resilient import FaultInjector, ModelBudget, error_label
 from app.schema import Language, Mode
 
 P = [ViewerProfile(Mode.ANALYST, Language.EN)]
@@ -92,10 +92,40 @@ def test_circuit_breaker_is_app_wide():
     assert p.calls == calls and s2.voice.stats["fallbacks"] > 0
 
 
-def test_injected_faults_never_touch_shared_breaker():
+def test_fault_sessions_use_simulated_model_and_private_state():
     shared = build_shared_state(LOW)
-    svc = build_voice_service(LOW, fault_rate=0.4, primary=Counting(), shared=shared)
-    assert svc.breaker is not shared.breaker and svc.budget is shared.budget
+    real = Counting()
+    svc = build_voice_service(LOW, fault_rate=0.4, primary=real, shared=shared)
+    assert svc.primary.name == "simulated-model"
+    assert (
+        svc.breaker is not shared.breaker
+        and svc.budget is not shared.budget
+        and svc.cache is not shared.cache
+    )
+    s = MatchSession(6, P, LOW, primary=real, shared=shared, fault_rate=0.5)
+    asyncio.run(s.run_all())
+    assert real.calls == 0 and shared.budget.used_total == 0 and not shared.breaker.is_open
+
+
+def test_injected_fault_is_checked_before_spending_budget():
+    budget = ModelBudget(100, 100)
+    svc = VoiceService(Counting(), budget=budget, retries=1, faults=FaultInjector(1.0, seed=1))
+    res = asyncio.run(svc.voice(req()))
+    assert res.fallback_used and budget.used_total == 0
+
+
+def test_per_client_hourly_share_of_model_calls():
+    shared = build_shared_state(Settings(llm_calls_per_client_per_hour=2))
+    p = Counting()
+
+    def svc(key):
+        return VoiceService(p, budget=shared.budget, client_limiter=shared.per_client, client_key=key)
+
+    a = svc("1.1.1.1")
+    results = [asyncio.run(a.voice(req())).status for _ in range(3)]
+    assert results == ["ok", "ok", "budget_exhausted"]
+    assert asyncio.run(svc("2.2.2.2").voice(req())).status == "ok"  # other clients unaffected
+    assert p.calls == 3
 
 
 # ----------------------------------------------------------------------------- error hygiene
@@ -164,22 +194,42 @@ def test_stream_rejects_bad_numbers(q):
 
 
 def test_stream_max_duration_ends_stream():
-    app = create_app(Settings(max_stream_seconds=0.0))
-    with TestClient(app) as c, c.stream("GET", "/api/stream?seed=5&speed=0") as r:
+    app = create_app(Settings(max_stream_seconds=1.0))
+    with TestClient(app) as c, c.stream("GET", "/api/stream?seed=5&speed=5") as r:
         lines = [ln for ln in r.iter_lines() if ln.startswith("data: ")]
     end = json.loads(lines[-1][6:])
     assert end["kind"] == "end" and end["reason"] == "max_duration"
 
 
-def test_heavy_endpoints_are_cached_and_sync():
+def test_heavy_endpoints_run_off_event_loop_and_are_cached(monkeypatch):
+    import threading
+
     main_mod._timeline.cache_clear()
+    main_mod._compare.cache_clear()
+    seen = []
+    real_run_batch = main_mod._run_batch
+
+    def spy(seed, profiles):
+        try:
+            asyncio.get_running_loop()
+            on_loop = True
+        except RuntimeError:
+            on_loop = False
+        seen.append((threading.current_thread() is threading.main_thread(), on_loop))
+        return real_run_batch(seed, profiles)
+
+    monkeypatch.setattr(main_mod, "_run_batch", spy)
     with TestClient(create_app(Settings())) as c:
         a = c.get("/api/match/8/timeline").json()
         b = c.get("/api/match/8/timeline").json()
-    assert a == b
+        c.get("/api/match/8/compare")
+        c.get("/api/match/8/recap")
+    assert a == b and a["count"] > 50
+    assert len(seen) == 2  # timeline once (cached for repeat + recap), compare once
+    assert all(not main and not loop for main, loop in seen)  # worker thread, no event loop
     info = main_mod._timeline.cache_info()
-    assert info.hits >= 1 and info.misses == 1
-    assert not asyncio.iscoroutinefunction(main_mod._timeline.__wrapped__)
+    assert info.hits >= 2 and info.misses == 1
+    assert isinstance(main_mod._timeline(8, ViewerProfile()), bytes)  # cached as compact JSON
 
 
 def test_recap_missing_is_clean_404(monkeypatch):
@@ -213,10 +263,22 @@ def test_settings_reject_non_finite_and_clamp(monkeypatch):
     assert s.llm_timeout_s == 6.0 and s.breaker_cooldown_s == 30.0
     assert s.default_speed == 5.0 and s.llm_retries == 3
     assert s.llm_min_significance == 0.0 and s.max_concurrent_streams == 50
+    monkeypatch.setenv("MDI_LLM_MIN_SIGNIFICANCE", "nan")
+    monkeypatch.setenv("MDI_DEFAULT_SPEED", "9999")
+    s = Settings.from_env()
+    assert s.llm_min_significance == 0.7 and s.default_speed == 600.0
+
+
+def test_settings_built_in_code_are_clamped():
+    s = Settings(default_speed=1, llm_timeout_s=float("nan"), llm_retries=50, max_stream_seconds=float("inf"))
+    assert s.default_speed == 5.0 and s.llm_timeout_s == 6.0 and s.llm_retries == 3
+    assert s.max_stream_seconds == 900.0
+    assert Settings(default_speed=9999).default_speed == 600.0
+    assert isinstance(Settings(llm_retries=2.7).llm_retries, int)
 
 
 def test_misconfigured_provider_fails_startup_without_creating_credential(monkeypatch):
-    import azure.identity.aio as aio
+    aio = pytest.importorskip("azure.identity.aio")
 
     created = []
     monkeypatch.setattr(aio, "DefaultAzureCredential", lambda *a, **k: created.append(1))
@@ -251,3 +313,60 @@ def test_provider_closes_client_and_credential_on_shutdown():
     p._credential = Closable("credential")
     asyncio.run(p.aclose())
     assert closed == ["client", "credential"]
+
+
+def test_rate_limiter_evicts_stale_keys_and_caps_size():
+    now = [0.0]
+    rl = RateLimiter(5, 60, clock=lambda: now[0], max_keys=1000)
+    for i in range(500):
+        rl.allow(f"10.0.{i // 256}.{i % 256}")
+    assert len(rl) == 500
+    now[0] = 30
+    rl.allow("10.0.0.0")  # refreshed key moves to the back
+    now[0] = 61
+    rl.allow("fresh")
+    assert len(rl) == 2  # every key whose newest hit is older than the window is gone
+    capped = RateLimiter(5, 60, clock=lambda: 0.0, max_keys=3)
+    for i in range(10):
+        capped.allow(str(i))
+    assert len(capped) == 3
+
+
+def test_stream_slot_probe_creates_no_entries():
+    slots = StreamSlots(10, 2)
+    for i in range(100):
+        assert slots.available(f"ip{i}")
+    assert slots.per_ip == {}
+    slots.try_acquire("a")
+    slots.release("a")
+    assert slots.per_ip == {} and slots.total == 0
+
+
+def test_429_carries_security_and_cors_headers():
+    app = create_app(Settings(rate_limit_per_minute=1, allowed_origins=("https://judge.example",)))
+    with TestClient(app) as c:
+        c.get("/api/match/1", headers={"Origin": "https://judge.example"})
+        r = c.get("/api/match/1", headers={"Origin": "https://judge.example"})
+    assert r.status_code == 429
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert "default-src 'self'" in r.headers["content-security-policy"]
+    assert r.headers["access-control-allow-origin"] == "https://judge.example"
+
+
+def test_stream_busy_ends_with_empty_trace(monkeypatch):
+    monkeypatch.setattr(StreamSlots, "try_acquire", lambda self, ip: False)
+    with TestClient(create_app(Settings())) as c, c.stream("GET", "/api/stream?seed=5&speed=0") as r:
+        events = [ln for ln in r.iter_lines() if ln.startswith(("event: ", "data: "))]
+    assert events[0] == "event: end"
+    end = json.loads(events[1][6:])
+    assert end == {"kind": "end", "reason": "busy", "trace": {}}
+
+
+def test_frontend_tolerates_missing_trace_and_stops_on_end():
+    from pathlib import Path
+
+    js = (Path(main_mod.__file__).parent / "static" / "app.js").read_text()
+    handler = js[js.index('addEventListener("end"') :]
+    handler = handler[: handler.index("});")]
+    assert handler.index("stop()") < handler.index("renderAgentSummary")
+    assert "s = s || {};" in js

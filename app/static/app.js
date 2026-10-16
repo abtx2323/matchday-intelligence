@@ -79,9 +79,15 @@
     });
     es.addEventListener("overlays", (m) => handleEnvelope(JSON.parse(m.data)));
     es.addEventListener("end", (m) => {
-      const d = JSON.parse(m.data);
+      let d = {};
+      try { d = JSON.parse(m.data) || {}; } catch (_e) { d = {}; }
+      stop(); // close first so EventSource never auto-reconnects
+      if (d.reason === "busy") {
+        $("agentSummary").textContent = "Server busy: too many live streams. Try again shortly.";
+        $("play").textContent = "▶ Retry";
+        return;
+      }
       renderAgentSummary(d.trace);
-      stop();
       $("play").textContent = "↺ Replay";
       state.t = 0;
     });
@@ -305,6 +311,7 @@
   }
 
   function renderAgentSummary(s) {
+    s = s || {};
     const box = $("agentSummary"); clear(box);
     const tbl = el("table"); const h = el("tr");
     ["agent", "calls", "ok", "retried", "degraded", "avg ms"].forEach((x) => h.append(el("th", null, x)));
@@ -315,7 +322,7 @@
       tbl.append(tr);
     }
     box.append(tbl);
-    const extra = [`handoffs: ${s.handoffs}`];
+    const extra = [`handoffs: ${s.handoffs ?? 0}`];
     if (s.provider) extra.push(`voice provider: ${s.provider}`);
     if (s.voice) extra.push(`voice fallbacks: ${s.voice.fallbacks}, retries: ${s.voice.retries}, circuit opens: ${s.voice.circuit_opens}`);
     if (s.circuit_open) extra.push("circuit OPEN: using template voice");

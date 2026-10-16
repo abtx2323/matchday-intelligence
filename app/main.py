@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi import Path as PathParam
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -62,8 +62,7 @@ def _run_batch(seed: int, profiles: tuple[ViewerProfile, ...]) -> tuple[MatchSes
     return session, asyncio.run(session.run_all())
 
 
-@lru_cache(maxsize=64)
-def _timeline(seed: int, profile: ViewerProfile) -> dict[str, Any]:
+def _timeline_data(seed: int, profile: ViewerProfile) -> dict[str, Any]:
     session, tl = _run_batch(seed, (profile,))
     return {
         "meta": session.meta.to_dict(),
@@ -74,8 +73,14 @@ def _timeline(seed: int, profile: ViewerProfile) -> dict[str, Any]:
     }
 
 
-@lru_cache(maxsize=64)
-def _compare(seed: int, analyst: ViewerProfile, casual: ViewerProfile, limit: int) -> dict[str, Any]:
+# Results are cached as compact JSON bytes (far smaller than Python object graphs).
+@lru_cache(maxsize=32)
+def _timeline(seed: int, profile: ViewerProfile) -> bytes:
+    return json.dumps(_timeline_data(seed, profile), separators=(",", ":")).encode()
+
+
+@lru_cache(maxsize=32)
+def _compare(seed: int, analyst: ViewerProfile, casual: ViewerProfile, limit: int) -> bytes:
     session, tl = _run_batch(seed, (analyst, casual))
 
     def pick(key: str) -> list[dict[str, Any]]:
@@ -83,16 +88,21 @@ def _compare(seed: int, analyst: ViewerProfile, casual: ViewerProfile, limit: in
         items.sort(key=lambda o: (-o.significance, o.clock.t))
         return [o.model_dump(mode="json") for o in items[:limit]]
 
-    return {
+    body = {
         "meta": session.meta.to_dict(),
         "analyst": {"total_overlays": len(tl[analyst.key]), "top": pick(analyst.key)},
         "casual": {"total_overlays": len(tl[casual.key]), "top": pick(casual.key)},
     }
+    return json.dumps(body, separators=(",", ":")).encode()
 
 
-def _recap(seed: int, profile: ViewerProfile) -> dict[str, Any] | None:
-    recaps = [o for o in _timeline(seed, profile)["overlays"] if o["type"] == "recap"]
-    return recaps[-1] if recaps else None
+def _recap(seed: int, profile: ViewerProfile) -> bytes | None:
+    recaps = [o for o in json.loads(_timeline(seed, profile))["overlays"] if o["type"] == "recap"]
+    return json.dumps(recaps[-1], separators=(",", ":")).encode() if recaps else None
+
+
+def _json(body: bytes) -> Response:
+    return Response(content=body, media_type="application/json")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -129,24 +139,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url="/api/openapi.json",
     )
 
-    if settings.allowed_origins:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=list(settings.allowed_origins),
-            allow_methods=["GET"],
-            allow_headers=["Accept", "Content-Type"],
-            allow_credentials=False,
-        )
-
     @app.middleware("http")
     async def guard(request: Request, call_next):
         if request.url.path.startswith("/api/"):
             ip = client_ip(request, settings.trusted_proxy_hops)
             if not state["limiter"].allow(ip):
-                return JSONResponse(
-                    {"detail": "rate limit exceeded"}, status_code=429, headers={"Retry-After": "60"}
+                return _secure(
+                    request,
+                    JSONResponse(
+                        {"detail": "rate limit exceeded"}, status_code=429, headers={"Retry-After": "60"}
+                    ),
                 )
-        response = await call_next(request)
+        return _secure(request, await call_next(request))
+
+    def _secure(request: Request, response: Response) -> Response:
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
@@ -158,6 +164,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
             )
         return response
+
+    if settings.allowed_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(settings.allowed_origins),
+            allow_methods=["GET"],
+            allow_headers=["Accept", "Content-Type"],
+            allow_credentials=False,
+        )
 
     async def heavy(fn, *args):
         sem: asyncio.Semaphore = state["heavy"]
@@ -190,9 +205,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return MatchSimulator(seed).meta.to_dict()
 
     @app.get("/api/match/{seed}/events")
-    async def match_events(
-        seed: SeedPath, limit: Annotated[int, Query(ge=1, le=5000)] = 5000
-    ) -> dict[str, Any]:
+    async def match_events(seed: SeedPath, limit: Annotated[int, Query(ge=1, le=5000)] = 5000) -> Response:
         sim = MatchSimulator(seed)
         evs = sim.events()[:limit]
         return {"meta": sim.meta.to_dict(), "count": len(evs), "events": [e.to_dict() for e in evs]}
@@ -204,9 +217,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lang: LangQ = Language.EN,
         club: ClubQ = None,
         player: PlayerQ = None,
-    ) -> dict[str, Any]:
+    ) -> Response:
         prof = _profile(MatchSimulator(seed).meta, mode, lang, club, player)
-        return await heavy(_timeline, seed, prof)
+        return _json(await heavy(_timeline, seed, prof))
 
     @app.get("/api/match/{seed}/compare")
     async def compare(
@@ -215,12 +228,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         club: ClubQ = None,
         player: PlayerQ = None,
         limit: Annotated[int, Query(ge=1, le=20)] = 6,
-    ) -> dict[str, Any]:
+    ) -> Response:
         """Same match, same intelligence, two audiences: proves the experiences differ."""
         meta = MatchSimulator(seed).meta
         analyst = _profile(meta, Mode.ANALYST, lang, club, player)
         casual = _profile(meta, Mode.CASUAL, lang, club, player)
-        return await heavy(_compare, seed, analyst, casual, limit)
+        return _json(await heavy(_compare, seed, analyst, casual, limit))
 
     @app.get("/api/match/{seed}/recap")
     async def recap(
@@ -234,7 +247,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         result = await heavy(_recap, seed, prof)
         if result is None:
             raise HTTPException(404, "recap not available for this match")
-        return result
+        return _json(result)
 
     @app.get("/api/stream")
     async def stream(
@@ -261,7 +274,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async def gen():
             # The slot is taken inside the generator so it is always released by ``finally``.
             if not slots.try_acquire(ip):
-                yield 'event: end\ndata: {"kind": "end", "reason": "busy"}\n\n'
+                yield 'event: end\ndata: {"kind": "end", "reason": "busy", "trace": {}}\n\n'
                 return
             try:
                 s = MatchSession(
@@ -271,6 +284,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     primary=state["primary"],
                     shared=state["shared"],
                     fault_rate=faults,
+                    client_key=ip,
                 )
                 hello = {
                     "kind": "meta",
