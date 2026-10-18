@@ -1,0 +1,303 @@
+{
+  "$defs": {
+    "Anchor": {
+      "description": "Pitch coordinates in metres (0..105 x 0..68) for pitch-anchored overlays.",
+      "properties": {
+        "x": {
+          "maximum": 105,
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "maximum": 68,
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "Anchor",
+      "type": "object"
+    },
+    "Audience": {
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/Mode"
+        },
+        "language": {
+          "$ref": "#/$defs/Language"
+        },
+        "favorite_club": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Favorite Club"
+        },
+        "focus_player": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Focus Player"
+        }
+      },
+      "required": [
+        "mode",
+        "language"
+      ],
+      "title": "Audience",
+      "type": "object"
+    },
+    "Display": {
+      "properties": {
+        "slot": {
+          "$ref": "#/$defs/Slot"
+        },
+        "duration_ms": {
+          "description": "0 means persistent until replaced",
+          "maximum": 600000,
+          "minimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "priority": {
+          "description": "Higher wins when slots collide",
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Priority",
+          "type": "integer"
+        },
+        "anchor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Anchor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "replace_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Overlays with the same key replace each other (e.g. scorebug)",
+          "title": "Replace Key"
+        }
+      },
+      "required": [
+        "slot",
+        "duration_ms",
+        "priority"
+      ],
+      "title": "Display",
+      "type": "object"
+    },
+    "Language": {
+      "enum": [
+        "en",
+        "es",
+        "fr"
+      ],
+      "title": "Language",
+      "type": "string"
+    },
+    "MatchClock": {
+      "properties": {
+        "t": {
+          "description": "Match seconds since kickoff, continuous across halves",
+          "minimum": 0,
+          "title": "T",
+          "type": "number"
+        },
+        "period": {
+          "maximum": 2,
+          "minimum": 1,
+          "title": "Period",
+          "type": "integer"
+        },
+        "display": {
+          "description": "mm:ss match clock",
+          "title": "Display",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t",
+        "period",
+        "display"
+      ],
+      "title": "MatchClock",
+      "type": "object"
+    },
+    "Mode": {
+      "enum": [
+        "analyst",
+        "casual"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "OverlayType": {
+      "enum": [
+        "scorebug",
+        "stat_panel",
+        "momentum",
+        "player_tag",
+        "player_card",
+        "commentary",
+        "insight",
+        "milestone",
+        "fan_alert",
+        "event_marker",
+        "recap",
+        "agent_trace"
+      ],
+      "title": "OverlayType",
+      "type": "string"
+    },
+    "Slot": {
+      "description": "Where a renderer should place the overlay.",
+      "enum": [
+        "top_left",
+        "top_right",
+        "lower_third",
+        "side_panel",
+        "ticker",
+        "pitch_anchor",
+        "fullscreen",
+        "hidden"
+      ],
+      "title": "Slot",
+      "type": "string"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "id": {
+      "description": "Stable id: same seed + profile => same ids",
+      "title": "Id",
+      "type": "string"
+    },
+    "match_id": {
+      "title": "Match Id",
+      "type": "string"
+    },
+    "seq": {
+      "description": "Source match event sequence number that triggered it",
+      "minimum": 0,
+      "title": "Seq",
+      "type": "integer"
+    },
+    "clock": {
+      "$ref": "#/$defs/MatchClock"
+    },
+    "type": {
+      "$ref": "#/$defs/OverlayType"
+    },
+    "display": {
+      "$ref": "#/$defs/Display"
+    },
+    "headline": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Headline"
+    },
+    "text": {
+      "anyOf": [
+        {
+          "maxLength": 1200,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Text"
+    },
+    "data": {
+      "additionalProperties": true,
+      "description": "Type-specific payload",
+      "title": "Data",
+      "type": "object"
+    },
+    "evidence": {
+      "additionalProperties": true,
+      "description": "Stats that justify the claim (explainability)",
+      "title": "Evidence",
+      "type": "object"
+    },
+    "significance": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Significance",
+      "type": "number"
+    },
+    "source_agents": {
+      "description": "Agents that contributed, in handoff order",
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Agents",
+      "type": "array"
+    },
+    "provider": {
+      "description": "Language provider that voiced the text",
+      "title": "Provider",
+      "type": "string"
+    },
+    "audience": {
+      "$ref": "#/$defs/Audience"
+    }
+  },
+  "required": [
+    "id",
+    "match_id",
+    "seq",
+    "clock",
+    "type",
+    "display",
+    "significance",
+    "source_agents",
+    "provider",
+    "audience"
+  ],
+  "title": "Matchday Intelligence OverlayEvent",
+  "type": "object",
+  "$id": "https://github.com/abtx2323/matchday-intelligence/docs/overlay-schema.json"
+}

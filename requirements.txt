@@ -1,0 +1,5 @@
+# Runtime (offline template provider). Pinned for reproducible builds.
+fastapi==0.141.1
+starlette==1.8.0
+pydantic==2.14.1
+uvicorn==0.54.0
